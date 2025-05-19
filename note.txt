@@ -1,0 +1,257 @@
+python -m venv venv
+.\venv\Scripts\activate
+set FLASK_APP=app/main.py
+
+from tensorflow.keras.layers import BatchNormalization, Dropout, Dense
+img_size = (300, 300)
+channels = 3
+img_shape = (img_size[0], img_size[1], channels)
+
+# Define number of classes
+class_count = len(list(train_gen.class_indices.keys()))
+
+# Load pre-trained model EfficientNetB0
+base_model = tf.keras.applications.efficientnet.EfficientNetB0(
+    include_top=False,
+    weights="imagenet",
+    input_shape=img_shape,
+    pooling='max'
+)
+
+# Freeze base model layers to reduce trainable parameters
+for layer in base_model.layers:
+    layer.trainable = False
+
+# Build the model using Sequential
+model = Sequential([
+    tf.keras.layers.InputLayer(input_shape=img_shape),
+    base_model,
+    BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001),
+    Dense(128,
+          kernel_regularizer=regularizers.l2(0.01),
+          activity_regularizer=regularizers.l1(0.005),
+          bias_regularizer=regularizers.l1(0.005),
+          activation='relu'),
+    Dropout(rate=0.4, seed=123),
+    Dense(class_count, activation='softmax')
+])
+
+# Compile the model with Adamax optimizer
+model.compile(
+    optimizer=Adamax(learning_rate=0.001),
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+# Print model summary
+model.summary()
+
+BACKUP main.py
+import os
+
+import numpy as np
+import tensorflow as tf
+from flask import Flask, jsonify, request
+from tensorflow import keras
+from tensorflow.keras.applications.efficientnet import preprocess_input
+from tensorflow.keras.preprocessing import image
+
+app = Flask(__name__)
+MODEL_PATH = '../model/best_weights.keras'
+
+# Opsi loading model
+try:
+    # Cara 1: Load model standar dengan compile=False
+    print("Mencoba loading model cara 1...")
+    model = keras.models.load_model(MODEL_PATH, compile=False)
+    print("Berhasil load model!")
+except Exception as e:
+    print(f"Error pada percobaan pertama: {e}")
+    try:
+        # Cara 2: Load dengan custom objects untuk BatchNormalization
+        print("Mencoba loading model cara 2...")
+        model = keras.models.load_model(
+            MODEL_PATH,
+            custom_objects={
+                'BatchNormalization': keras.layers.BatchNormalization
+            },
+            compile=False
+        )
+        print("Berhasil load model!")
+    except Exception as e:
+        print(f"Error pada percobaan kedua: {e}")
+        try:
+            # Cara 3: Gunakan tf.keras.saving.load_model
+            print("Mencoba loading model cara 3...")
+            model = tf.keras.saving.load_model(MODEL_PATH, compile=False)
+            print("Berhasil load model!")
+        except Exception as e:
+            print(f"Semua percobaan load model gagal: {e}")
+            raise Exception("Tidak dapat memuat model. Periksa format dan versi model.")
+
+# Label kelas (sesuaikan dengan model kamu)
+CLASS_NAMES = ['First_Degree', 'Second_Degree', 'Third_Degree']
+
+# Ukuran gambar yang dipakai oleh model
+IMG_SIZE = (224, 224)
+
+@app.route('/')
+def home():
+    return 'Skin Burn Prediction API is running!'
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image uploaded'}), 400
+
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({'error': 'Empty filename'}), 400
+
+    try:
+        # Load dan preprocess gambar
+        # Simpan file sementara untuk dibaca sebagai gambar
+        temp_path = "temp_image.jpg"
+        file.save(temp_path)
+        
+        img = image.load_img(temp_path, target_size=IMG_SIZE)
+        img_array = image.img_to_array(img)
+        img_array = preprocess_input(img_array)
+        img_array = np.expand_dims(img_array, axis=0)  # Tambah batch dimensi
+
+        # Prediksi
+        predictions = model.predict(img_array)
+        predicted_class = CLASS_NAMES[np.argmax(predictions[0])]
+        confidence = float(np.max(predictions[0]))
+
+        # Hapus file temporary
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        return jsonify({
+            'prediction': predicted_class,
+            'confidence': round(confidence * 100, 2)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+curl -X POST -F "file=@C:\Users\Asus\Pictures\degree2.jpg" https://pdxvfzsd-5000.asse.devtunnels.ms/predict
+
+
+
+
+set GOOGLE_APPLICATION_CREDENTIALS=D:\Documents\Kuliah\TA\ML\dob app\serviceaccount.json
+
+{
+  "message": "API untuk prediksi gambar. Kirim gambar melalui POST request ke /predict"
+}
+
+gcloud builds submit --tag gcr.io/agile-scheme-424018-g8/skin-burn-app
+
+Build and push your Docker image to Google Container Registry:
+gcloud builds submit --tag gcr.io/agile-scheme-424018-g8/dob-flask-api
+
+Deploy to Cloud Run with environment variables:
+
+.
+docker push gcr.io/agile-scheme-424018-g8/dob-flask-api
+gcloud run deploy dob-flask-api \
+  --image gcr.io/agile-scheme-424018-g8/dob-flask-api \
+  --platform managed \
+  --memory 4Gi \
+  --cpu 2 \
+  --region asia-southeast1
+
+Grant IAM permissions to your Cloud Run service account:
+Make sure your Cloud Run service account has roles/storage.objectViewer permission on the bucket containin
+
+gcloud run deploy dob-flask-api \
+  --image gcr.io/agile-scheme-424018-g8/dob-flask-api \
+  --platform managed \
+  --memory 4Gi \
+  --cpu 2 \
+
+  --min-instances 0 \
+
+  --max-instances 10 \
+  --allow-unauthenticated \
+  --region asia-southeast2
+
+
+# --- Prediksi ---
+# Fungsi prediksi diperbarui agar lebih fleksibel
+# def predict_image(img_array):
+#     global model, model_type
+#     if model is None:
+#         if not load_model():
+#             raise Exception("Model tidak tersedia")
+    
+#     try:
+#         # Pastikan input selalu float32
+#         if img_array.dtype != np.float32:
+#             print(f"Mengkonversi input dari {img_array.dtype} ke float32")
+#             img_array = img_array.astype(np.float32)
+        
+#         print(f"Menjalankan prediksi dengan model tipe: {model_type}")
+#         print(f"Input shape: {img_array.shape}, dtype: {img_array.dtype}")
+        
+#         # Prediksi sesuai tipe model
+#         if model_type == "signature":
+#             print("Menggunakan signature model untuk prediksi")
+#             tf_input = tf.constant(img_array)
+#             prediction = model(tf_input)
+            
+#             # Signature model mengembalikan dictionary
+#             print(f"Output signature keys: {prediction.keys()}")
+#             output_key = list(prediction.keys())[0]
+#             prediction_tensor = prediction[output_key]
+#             pred_class = int(np.argmax(prediction_tensor.numpy()[0]))
+#             confidence = float(np.max(prediction_tensor.numpy()[0]))
+            
+#         elif model_type == "keras":
+#             print("Menggunakan keras model untuk prediksi")
+#             prediction = model.predict(img_array)
+#             pred_class = int(np.argmax(prediction[0]))
+#             confidence = float(np.max(prediction[0]))
+            
+#         elif model_type == "saved_model":
+#             print("Menggunakan saved_model untuk prediksi")
+#             try:
+#                 tf_input = tf.constant(img_array)
+#                 prediction = model(tf_input)
+                
+#                 if isinstance(prediction, dict):
+#                     pred_values = next(iter(prediction.values()))
+#                     if hasattr(pred_values, "numpy"):
+#                         pred_class = int(np.argmax(pred_values.numpy()[0]))
+#                         confidence = float(np.max(pred_values.numpy()[0]))
+#                     else:
+#                         pred_class = int(np.argmax(pred_values[0]))
+#                         confidence = float(np.max(pred_values[0]))
+#                 else:
+#                     pred_class = int(np.argmax(prediction.numpy()[0]))
+#                     confidence = float(np.max(prediction.numpy()[0]))
+#             except Exception as e:
+#                 print(f"Error dengan __call__: {e}")
+#                 if hasattr(model, "predict"):
+#                     prediction = model.predict(img_array)
+#                     pred_class = int(np.argmax(prediction[0]))
+#                     confidence = float(np.max(prediction[0]))
+#         else:
+#             raise Exception("Tipe model tidak dikenali")
+        
+#         class_names = ["First Degree", "Second Degree", "Third Degree"]
+#         return {
+#             "class_id": pred_class + 1,  # Menambahkan 1 untuk memastikan class_id dimulai dari 1
+#             "class_name": class_names[pred_class] if pred_class < len(class_names) else f"Class {pred_class}",
+#             "confidence": round(confidence * 100, 2)
+#         }
+#     except Exception as e:
+#         print(f"Error saat prediksi: {e}")
+#         import traceback
+#         print(traceback.format_exc())
+#         raise
+
